@@ -1,0 +1,24 @@
+# HTCondor submit description file: hyperparameter_search.submit
+
+universe            = docker
+docker_image        = nvidia/cuda:12.4.0-runtime-ubuntu22.04
+docker_pull_policy  = always
+initialdir          = /nethome/arouvalis
+executable          = /nethome/arouvalis/PhD/retrieval_task/scripts/server_files/adclip_egnn.sh
+transfer_executable = False
+
+output              = /nethome/arouvalis/PhD/retrieval_task/results/logfiles/adclip/job_$(Cluster)_$(Process).out
+error               = /nethome/arouvalis/PhD/retrieval_task/results/logfiles/adclip/job_$(Cluster)_$(Process).err
+log                 = /nethome/arouvalis/PhD/retrieval_task/results/logfiles/adclip/job_$(Cluster).log
+
+request_CPUs        = 1
+request_memory      = 5G
+request_GPUs        = 1
+ 
+ 
+requirements = (Machine == "cl17lx.lsv.uni-saarland.de") || \
+               (Machine == "cl18lx.lsv.uni-saarland.de")
+
+# Pass hyperparameters as arguments
+arguments = $(args)
+queue args from /nethome/arouvalis/PhD/retrieval_task/scripts/server_files/adclip_egnn.txt

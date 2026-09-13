@@ -1,0 +1,38 @@
+.env
+red_queen_outputs/*
+!red_queen_outputs/.gitkeep
+config/__pycache__/tca_config.cpython-311.pyc
+dataset/__pycache__/dataset_manager.cpython-311.pyc
+llms/__pycache__/llm_manager.cpython-311.pyc
+multi_turn_attack.egg-info/PKG-INFO
+multi_turn_attack.egg-info/SOURCES.txt
+multi_turn_attack.egg-info/top_level.txt
+prompts/__pycache__/prompt_templates.cpython-311.pyc
+prompts/__pycache__/prompt_response.cpython-311.pyc
+tca/__pycache__/
+build/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.env
+.vscode/
+.ipynb_checkpoints/
+.hıstory/
+.history-*
+
+# Large ML/model files
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# Large dataset files (transfer to cluster manually, not via git)
+dataset/red_queen_full_llama3_70b.csv
+dataset/red_queen_full_gpt4o_mini.csv
+dataset/raw_data/
+
+# Python build files
+build/
+dist/
+*.egg-info/
