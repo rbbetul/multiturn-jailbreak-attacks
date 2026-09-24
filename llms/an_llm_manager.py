@@ -152,7 +152,8 @@ class LLMManager:
                         )
                         content = response.message.content or ""
                         if content.strip():
-                            return content, None
+                            usage = self._serialize_ollama_usage(response)
+                            return content, usage
                         last_error = ValueError("Ollama returned empty response")
                     except Exception as exc:
                         last_error = exc
@@ -225,3 +226,31 @@ class LLMManager:
         if hasattr(usage, "dict"):
             return usage.dict()
         return dict(usage)
+
+    @staticmethod
+    def _serialize_ollama_usage(response: Any) -> Dict[str, Any] | None:
+        """Token counts + timing breakdown from an Ollama chat response.
+
+        Ollama has no per-token $ price (it's local), so unlike the OpenAI
+        usage dict this is the cost signal itself: tokens processed and the
+        GPU compute time split from one-off model-load time.
+        """
+        prompt_tokens = getattr(response, "prompt_eval_count", None)
+        completion_tokens = getattr(response, "eval_count", None)
+        if prompt_tokens is None and completion_tokens is None:
+            return None
+
+        usage: Dict[str, Any] = {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": (prompt_tokens or 0) + (completion_tokens or 0),
+        }
+        for field, ns_value in (
+            ("total_duration_ms", getattr(response, "total_duration", None)),
+            ("load_duration_ms", getattr(response, "load_duration", None)),
+            ("prompt_eval_duration_ms", getattr(response, "prompt_eval_duration", None)),
+            ("eval_duration_ms", getattr(response, "eval_duration", None)),
+        ):
+            if ns_value is not None:
+                usage[field] = ns_value / 1e6
+        return usage
