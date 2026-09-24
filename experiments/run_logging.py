@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
 import sys
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
-from typing import Iterator, TextIO
+from typing import Any, Dict, Iterator, TextIO
 
 
 class _TeeStream:
@@ -57,3 +60,55 @@ def tee_terminal_output(log_path: Path) -> Iterator[Path]:
 def log_path_for_output(output_csv: Path) -> Path:
     """Pair a results CSV with a log file that shares the same stem."""
     return Path(output_csv).with_suffix(".log")
+
+
+def manifest_path_for_output(output_csv: Path) -> Path:
+    """Pair a results CSV with a run-manifest file that shares the same stem."""
+    return Path(output_csv).with_suffix(".manifest.json")
+
+
+def _git_commit_hash() -> str | None:
+    """Best-effort commit hash of the code that produced a run; None if unavailable."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).resolve().parent.parent,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def write_run_manifest(
+    output_csv: Path,
+    *,
+    args: Dict[str, Any],
+    config_snapshot: Dict[str, Any],
+    started_at: datetime,
+    finished_at: datetime,
+    num_conversations: int,
+    num_transitions: int,
+) -> Path:
+    """Write a per-run manifest: code version, args, resolved config, timing.
+
+    Pairs with the results CSV so a run stays reproducible even after
+    config.yaml or the code itself changes later.
+    """
+    manifest = {
+        "git_commit": _git_commit_hash(),
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "duration_seconds": round((finished_at - started_at).total_seconds(), 1),
+        "num_conversations": num_conversations,
+        "num_transitions": num_transitions,
+        "args": args,
+        "config_snapshot": config_snapshot,
+    }
+    path = manifest_path_for_output(output_csv)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, default=str)
+    return path

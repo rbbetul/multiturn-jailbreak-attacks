@@ -24,6 +24,7 @@ from dataset.conversation_dataset_loader import (  # noqa: E402
     load_conversations,
 )
 from experiments.batching import select_batch_conversations  # noqa: E402
+from experiments.run_logging import write_run_manifest  # noqa: E402
 from intent.conversation_analyzer import ConversationAnalyzer  # noqa: E402
 from llms.llm_call_logger import llm_calls_log_path_for_output  # noqa: E402
 from llms.an_llm_manager import load_config  # noqa: E402
@@ -163,6 +164,7 @@ async def run_analysis(
     batch_row_indices: list[int] | None = None,
     random_sampling: bool = False,
 ) -> None:
+    started_at = datetime.now(timezone.utc)
     conversations, resolved_format, resolved_path = load_conversations(
         data_path, dataset_format
     )
@@ -271,6 +273,48 @@ async def run_analysis(
 
     if resolved_llm_log is not None:
         print(f"LLM call log: {resolved_llm_log}")
+
+    if output_csv is not None:
+        risk_cfg = analyzer.config.risk
+        config_snapshot = {
+            "risk": {
+                "weights": {
+                    "alpha": risk_cfg.weights.alpha,
+                    "beta": risk_cfg.weights.beta,
+                    "gamma": risk_cfg.weights.gamma,
+                },
+                "pattern_weights": risk_cfg.pattern_weights.to_dict(),
+                "warn_threshold": risk_cfg.warn_threshold,
+                "block_threshold": risk_cfg.block_threshold,
+            }
+        }
+        args_snapshot = {
+            "config_path": config_path,
+            "data_path": str(resolved_path),
+            "dataset_format": resolved_format.value,
+            "prompt_template": llm_type,
+            "resolved_model": analyzer.active_model,
+            "resolved_provider": analyzer.llm_manager.config.provider,
+            "min_turns": min_turns,
+            "max_rows": max_rows,
+            "random_sample": random_sample,
+            "batch_index": batch_index,
+            "random_seed": random_seed,
+            "random_sampling": random_sampling,
+            "human_only": human_only,
+            "exclude_row_indices": sorted(exclude_row_indices) if exclude_row_indices else None,
+            "batch_row_indices": batch_row_indices,
+        }
+        manifest_path = write_run_manifest(
+            output_csv,
+            args=args_snapshot,
+            config_snapshot=config_snapshot,
+            started_at=started_at,
+            finished_at=datetime.now(timezone.utc),
+            num_conversations=len(conversations),
+            num_transitions=len(analyzer.recorded_results),
+        )
+        print(f"Run manifest: {manifest_path}")
 
 
 def default_llm_calls_log(data_path: Path, model_name: str) -> Path:

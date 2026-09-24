@@ -193,9 +193,11 @@ class ConversationAnalyzer:
                     prev_pair,
                     current_pair,
                     call_context={
+                        **metadata,
                         "row_index": row_index,
                         "transition_index": t_idx,
-                        "llm_type": self.llm_type,
+                        "provider": self.llm_manager.config.provider,
+                        "prompt_template": self.llm_type,
                     },
                 )
                 record = self.process_response(response, row_index, t_idx)
