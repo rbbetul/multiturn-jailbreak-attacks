@@ -94,6 +94,30 @@ def latency_stats(calls: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def unmatched_calls(
+    rows: list[dict[str, Any]], calls: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Calls that succeeded (no LLM-level error) but never produced a CSV row.
+
+    Usually a downstream response-parse failure in process_response(), not a
+    failed LLM call — see intent/conversation_analyzer.py.
+    """
+    recorded = {
+        (int(r["row_index"]), int(r["transition_index"]))
+        for r in rows
+        if r.get("row_index") and r.get("transition_index")
+    }
+    orphans = []
+    for call in calls:
+        ctx = call.get("context") or {}
+        row_index, transition_index = ctx.get("row_index"), ctx.get("transition_index")
+        if row_index is None or transition_index is None:
+            continue
+        if (int(row_index), int(transition_index)) not in recorded:
+            orphans.append(call)
+    return orphans
+
+
 def token_usage(calls: list[dict[str, Any]]) -> dict[str, Any] | None:
     with_usage = [c for c in calls if c.get("usage")]
     if not with_usage:
@@ -126,6 +150,7 @@ def summarize_cell(csv_path: Path) -> dict[str, Any]:
         "risk_by_turn": progressive_risk_by_turn(rows),
         "latency": latency_stats(calls),
         "tokens": token_usage(calls),
+        "unmatched_calls": unmatched_calls(rows, calls),
         "manifest": manifest,
     }
 
@@ -167,6 +192,20 @@ def print_cell(summary: dict[str, Any]) -> None:
         )
     else:
         print("Tokens: no usage data in llm_calls.jsonl (older run, or provider without usage capture)")
+
+    orphans = summary["unmatched_calls"]
+    if orphans:
+        print(
+            f"Calls with no matching transition (likely response parse failures): "
+            f"{len(orphans)}"
+        )
+        for call in orphans[:5]:
+            ctx = call.get("context") or {}
+            preview = (call.get("response") or "")[:80].replace("\n", " ")
+            print(
+                f"  row={ctx.get('row_index')} transition={ctx.get('transition_index')} "
+                f"response_preview={preview!r}"
+            )
 
     manifest = summary["manifest"]
     if manifest:
