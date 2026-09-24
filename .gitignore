@@ -1,5 +1,6 @@
 .env
 CLAUDE.md
+EXPERIMENT_PLAN.md
 red_queen_outputs/*
 !red_queen_outputs/.gitkeep
 config/__pycache__/tca_config.cpython-311.pyc
