@@ -89,6 +89,8 @@ def _metadata_from_series(row: pd.Series, exclude: set[str]) -> Dict[str, Any]:
             continue
         if pd.isna(value):
             continue
+        if hasattr(value, "item"):
+            value = value.item()
         meta[col] = value
     return meta
 
