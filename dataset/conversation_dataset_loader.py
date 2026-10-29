@@ -23,6 +23,16 @@ Supported formats
    Required: ``url``, ``message_index``, ``role``, ``plain_text``.
    Roles ``user`` / ``llm`` are paired into turns: (assistant, human).
 
+5. **tom_gibbs** — one CSV row per conversation (Tom Gibbs multi-turn jailbreak
+   datasets, https://huggingface.co/datasets/tom-gibbs/multi-turn_jailbreak_attack_datasets)
+
+   Required column:
+   - ``Multi-turn conversation``: Python-literal list of ``{"role", "content"}``
+     dicts, alternating user/assistant. Assistant content is always the
+     placeholder string ``"None"`` (input-only dataset, no real model
+     replies) and is normalized to an empty string, so this format is
+     inherently human-only.
+
 Turn order is preserved. The analyzer scores transitions between consecutive
 turn-pairs, so each conversation needs at least 2 turns.
 """
@@ -45,6 +55,7 @@ class DatasetFormat(str, Enum):
     PAIRS = "pairs"
     HARMBENCH = "harmbench"
     CHATGPT = "chatgpt"
+    TOM_GIBBS = "tom_gibbs"
     AUTO = "auto"
 
 
@@ -57,6 +68,8 @@ RESERVED_PAIR_COLUMNS = {
 
 CHATGPT_REQUIRED_COLUMNS = {"url", "message_index", "role", "plain_text"}
 CHATGPT_RESERVED_COLUMNS = CHATGPT_REQUIRED_COLUMNS | {"turns_count"}
+
+TOM_GIBBS_REQUIRED_COLUMNS = {"Goal ID", "Multi-turn conversation"}
 
 
 def _message_columns(columns) -> List[str]:
@@ -76,6 +89,8 @@ def detect_format(df: pd.DataFrame) -> DatasetFormat:
         return DatasetFormat.NESTED
     if _message_columns(df.columns):
         return DatasetFormat.HARMBENCH
+    if TOM_GIBBS_REQUIRED_COLUMNS.issubset(cols):
+        return DatasetFormat.TOM_GIBBS
     raise ValueError(
         "Could not detect dataset format. Use --format nested, pairs, chatgpt, or harmbench.\n"
         + DATA_FORMAT_HELP
@@ -227,6 +242,37 @@ def load_chatgpt_conversations(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return rows
 
 
+def _parse_tom_gibbs_turns(value: Any) -> list:
+    if isinstance(value, list):
+        return value
+    return ast.literal_eval(value)
+
+
+def tom_gibbs_row_to_llm_pairs(row: pd.Series) -> List[ConversationPair]:
+    messages: List[Dict[str, Any]] = []
+    for turn in _parse_tom_gibbs_turns(row["Multi-turn conversation"]):
+        role = _normalize_chatgpt_role(turn.get("role"))
+        content = turn.get("content")
+        if role == "assistant" and (content is None or str(content).strip().lower() == "none"):
+            content = ""
+        messages.append({"role": role, "plain_text": content})
+    return messages_to_llm_pairs(messages)
+
+
+def load_tom_gibbs_conversations(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    missing = TOM_GIBBS_REQUIRED_COLUMNS - set(df.columns)
+    if missing:
+        raise ValueError(f"tom_gibbs format missing columns: {sorted(missing)}")
+
+    rows: List[Dict[str, Any]] = []
+    for row_index, (_, row) in enumerate(df.iterrows()):
+        llm_pairs = tom_gibbs_row_to_llm_pairs(row)
+        metadata = _metadata_from_series(row, exclude={"Multi-turn conversation"})
+        metadata["row_index"] = row_index
+        rows.append({"row_index": row_index, "llm_pairs": llm_pairs, "metadata": metadata})
+    return rows
+
+
 def load_harmbench_conversations(df: pd.DataFrame) -> List[Dict[str, Any]]:
     message_cols = set(_message_columns(df.columns))
     rows: List[Dict[str, Any]] = []
@@ -260,6 +306,7 @@ def load_conversations(
         DatasetFormat.PAIRS: load_pairs_conversations,
         DatasetFormat.HARMBENCH: load_harmbench_conversations,
         DatasetFormat.CHATGPT: load_chatgpt_conversations,
+        DatasetFormat.TOM_GIBBS: load_tom_gibbs_conversations,
     }
     conversations = loaders[resolved](df)
 

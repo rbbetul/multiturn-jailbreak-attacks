@@ -21,7 +21,7 @@ class LLMCallLogger:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.verbose = verbose
         self._call_count = 0
-        self._file: TextIO = self.log_path.open("w", encoding="utf-8")
+        self._file: TextIO = self.log_path.open("a", encoding="utf-8")
 
     def log_call(
         self,

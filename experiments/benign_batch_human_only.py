@@ -78,6 +78,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_RANDOM_SEED,
         help="RNG seed when using --random (default: 42)",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip rows already present in --output and append to it (requires --output)",
+    )
     return parser
 
 
@@ -89,6 +94,8 @@ def main() -> None:
             pass
 
     args = build_parser().parse_args()
+    if args.resume and args.output is None:
+        raise SystemExit("--resume requires an explicit --output path to resume from")
     data_path = resolve_data_path(args.data)
     llm_cfg = load_config(args.config, provider=args.provider)
     model_name = args.model or llm_cfg.model_name
@@ -126,6 +133,7 @@ def main() -> None:
                 interactive=False,
                 human_only=True,
                 random_sampling=args.random,
+                resume=args.resume,
             )
         )
 

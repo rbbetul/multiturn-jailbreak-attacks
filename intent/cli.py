@@ -163,6 +163,7 @@ async def run_analysis(
     exclude_row_indices: set[int] | None = None,
     batch_row_indices: list[int] | None = None,
     random_sampling: bool = False,
+    resume: bool = False,
 ) -> None:
     started_at = datetime.now(timezone.utc)
     conversations, resolved_format, resolved_path = load_conversations(
@@ -238,6 +239,23 @@ async def run_analysis(
         llm_type = "gpt_human_only"
         print("Analysis mode: human messages only (assistant text omitted)")
 
+    # Resume must act on the already-selected batch/sample, not the raw pool —
+    # filtering the pool before select_batch_conversations() would shift which
+    # rows land in batch 0, breaking the fixed row-index pairing across runs.
+    existing_df = None
+    if resume and output_csv is not None and Path(output_csv).exists():
+        existing_df = pd.read_csv(output_csv)
+        if "row_index" in existing_df.columns:
+            resumed_rows = {int(v) for v in existing_df["row_index"].dropna().unique()}
+            remaining = [c for c in conversations if c["row_index"] not in resumed_rows]
+            done_count = len(conversations) - len(remaining)
+            if done_count:
+                print(
+                    f"Resuming {output_csv}: {done_count}/{len(conversations)} "
+                    f"conversation(s) already done, {len(remaining)} remaining"
+                )
+            conversations = remaining
+
     resolved_llm_log = llm_calls_log
     if resolved_llm_log is None and output_csv is not None:
         resolved_llm_log = llm_calls_log_path_for_output(output_csv)
@@ -250,6 +268,8 @@ async def run_analysis(
         llm_calls_log=resolved_llm_log,
         human_only=human_only,
     )
+    if existing_df is not None:
+        analyzer.recorded_results = existing_df.to_dict("records")
 
     try:
         for item in conversations:
@@ -263,6 +283,8 @@ async def run_analysis(
             await analyzer.analyze_conversation_row(
                 item["row_index"], item["llm_pairs"], metadata
             )
+            if output_csv is not None:
+                analyzer.save_results_csv(output_csv)  # checkpoint after every conversation
 
         if output_csv is not None:
             analyzer.save_results_csv(output_csv)
@@ -304,14 +326,18 @@ async def run_analysis(
             "human_only": human_only,
             "exclude_row_indices": sorted(exclude_row_indices) if exclude_row_indices else None,
             "batch_row_indices": batch_row_indices,
+            "resumed": existing_df is not None,
         }
+        # len(conversations) only counts this invocation's remaining work after
+        # a resume filtered out already-done rows — recorded_results carries the
+        # true total (resumed + new).
         manifest_path = write_run_manifest(
             output_csv,
             args=args_snapshot,
             config_snapshot=config_snapshot,
             started_at=started_at,
             finished_at=datetime.now(timezone.utc),
-            num_conversations=len(conversations),
+            num_conversations=len({r["row_index"] for r in analyzer.recorded_results}),
             num_transitions=len(analyzer.recorded_results),
         )
         print(f"Run manifest: {manifest_path}")

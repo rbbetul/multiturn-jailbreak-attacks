@@ -39,6 +39,11 @@ dataset/red_queen_full_gpt4o_mini.csv
 dataset/raw_data/
 dataset/chatgpt_results_final_language_filtered.csv
 
+# Tom Gibbs multi-turn jailbreak datasets (vendored from Hugging Face,
+# re-downloadable via curl -- see EXPERIMENT_RUN_GUIDE.md)
+dataset/tom_gibbs_harmful.csv
+dataset/tom_gibbs_completely_benign.csv
+
 # Python build files
 build/
 dist/
